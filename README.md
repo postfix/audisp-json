@@ -98,7 +98,14 @@ down for any reason.
     filter f_not_auditd { not message("type=[0-9]* audit") or not message("error converting sid to string"); };
     log{ source(s_syslog);f ilter(f_not_auditd); destination(d_logserver); };
 ```
+###Example for rsyslog
 
+```
+    if $programname == 'audisp-graylog' then {
+    *.* @graylog.example.com:5514;RSYSLOG_SyslogProtocol23Format
+    stop
+    }
+```
 ### Misc other things to do
 
 - It is suggested to bump the audispd queue to adjust for extremely busy systems, for ex. `q_depth=512`.
@@ -109,8 +116,6 @@ down for any reason.
 
 Syscalls are interpreted by audisp-json and transformed into a MozDef JSON message.
 This means, for example, all execve() and related calls will be aggregated into a message of type EXECVE.
-
-NOTE: MozDef messages are not sent to syslog. They're sent to MozDef directly.
 
 Supported messages are listed in the document messages_format.md
 
