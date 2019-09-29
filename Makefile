@@ -105,17 +105,17 @@ rpm: packaging
 		--config-files etc/audisp/plugins.d/au-json.conf --config-files etc/audisp/audisp-json.conf -s dir -t rpm .
 
 deb-deps:
-	@echo "If you want to run this on a debian|ubuntuetc build system (e.g. here, ubuntu), do this:"
-	@echo `docker run --rm -ti -v $(pwd):/build ubuntu:14.04 /bin/bash` then cd /build and run this make target
-	@echo Installing dependencies...
+	#@echo "If you want to run this on a debian|ubuntuetc build system (e.g. here, ubuntu), do this:"
+	#@echo `docker run --rm -ti -v $(pwd):/build ubuntu:14.04 /bin/bash` then cd /build and run this make target
+	#@echo Installing dependencies...
 	apt-get install -y libtool build-essential libaudit-dev libaudit1 libaudit-common libauparse-dev libauparse0 libtool ruby ruby-dev
 	gem install --no-ri --no-rdoc fpm
 	$(MAKE) deb
 
 deb: packaging
 	fpm ${FPMOPTS} -C tmp -v ${VERSION} -n audisp-json --license GPL --vendor mozilla --description "json plugin for Linux Audit" \
-		--url https://github.com/gdestuynder/audisp-json -d auditd -d \
-		--deb-build-depends libaudit-dev --deb-build-depends \
+		--url https://github.com/postfix/audisp-json -d auditd \
+		--deb-build-depends libaudit-dev --deb-build-depends libaudit-dev \
 		--config-files etc/audisp/plugins.d/au-json.conf --config-files etc/audisp/audisp-json.conf -s dir -t deb .
 
 clean:
