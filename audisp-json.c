@@ -292,15 +292,7 @@ int main(int argc, char *argv[])
 		if (hostname == NULL)
 			return 1;
 	}
-
-	if (config.file_log != NULL) {
-		file_log = fopen(config.file_log, "ab");
-		if (file_log == NULL) {
-			syslog(LOG_ERR, "failed to open %s", config.file_log);
-			return -1;
-		}
-	}
-
+	
 	if (config.prepend_msg == NULL) {
 		config.prepend_msg = "\0";
 	}
@@ -544,17 +536,10 @@ void syslog_json_msg(struct json_msg_type json_msg)
 {
 	attr_t *head = json_msg.details;
 	attr_t *prev;
-	queue_t *new_q;
 	int len;
 	char msg[MAX_JSON_MSG_SIZE];
-	
-	new_q = malloc(sizeof(queue_t));
-	if (!new_q) {
-		syslog(LOG_ERR, "syslog_json_msg() new_q malloc() failed, message lost!");
-		return;
-	}
 
-	len = snprintf(new_q->msg, MAX_JSON_MSG_SIZE,
+	len = snprintf(msg, MAX_JSON_MSG_SIZE,
 "%s{\
 \"category\": \"%s\",\
 \"summary\": \"%s\",\
@@ -573,18 +558,17 @@ void syslog_json_msg(struct json_msg_type json_msg)
 		PROGRAM_NAME, json_msg.timestamp, PROGRAM_NAME, STR(PROGRAM_VERSION));
 
 	while (head) {
-			len += snprintf(new_q->msg+len, MAX_JSON_MSG_SIZE-len, "%s,", head->value);
+			len += snprintf(msg+len, MAX_JSON_MSG_SIZE-len, "%s,", head->value);
 			prev = head;
 			head = head->next;
 			free(prev);
-
-			if (head == NULL) {
-				new_q->msg[len-1] = '}';
+			if (head == NULL){
+		    len--;
 			}
 	}
 
-	len += snprintf(new_q->msg+len, MAX_JSON_MSG_SIZE-len, "}%s\n", config.postpend_msg);
-	len += snprintf(msg+len, MAX_JSON_MSG_SIZE-len, "}}");
+	len += snprintf(msg+len, MAX_JSON_MSG_SIZE-len, "}%s\n", config.postpend_msg);
+	//len += snprintf(msg+len, MAX_JSON_MSG_SIZE-len, "}}");
 	msg[MAX_JSON_MSG_SIZE-1] = '\0';
 	syslog(LOG_INFO, "%s", msg);
 }

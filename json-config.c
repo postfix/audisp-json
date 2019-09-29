@@ -57,18 +57,6 @@ struct nv_list
 static char *get_line(FILE *f, char *buf);
 static int nv_split(char *buf, struct nv_pair *nv);
 static const struct kw_pair *kw_lookup(const char *val);
-static int server_parser(struct nv_pair *nv, int line,
-		json_conf_t *config);
-static int curl_ca_parser(struct nv_pair *nv, int line,
-		json_conf_t *config);
-static int ssl_parser(struct nv_pair *nv, int line,
-		json_conf_t *config);
-static int curl_parser(struct nv_pair *nv, int line,
-		json_conf_t *config);
-static int curl_fparser(struct nv_pair *nv, int line,
-		json_conf_t *config);
-static int file_fparser(struct nv_pair *nv, int line,
-		json_conf_t *config);
 static int prepend_parser(struct nv_pair *nv, int line,
 		json_conf_t *config);
 static int postpend_parser(struct nv_pair *nv, int line,
@@ -76,12 +64,6 @@ static int postpend_parser(struct nv_pair *nv, int line,
 
 static const struct kw_pair keywords[] =
 {
-	{"mozdef_url",	server_parser,	0},
-	{"curl_cainfo", curl_ca_parser,	0},
-	{"ssl_verify",	ssl_parser,	0},
-	{"curl_verbose", curl_parser,	0},
-	{"curl_logfile", curl_fparser,	0},
-	{"file_log", file_fparser,	0},
 	{"prepend_msg", prepend_parser, 0},
 	{"postpend_msg", postpend_parser, 0},
 	{NULL}
@@ -92,8 +74,8 @@ static const struct kw_pair keywords[] =
 */
 void clear_config(json_conf_t *config)
 {
-	config->mozdef_url = NULL;
-	config->ssl_verify = 1;
+	config->prepend_msg= NULL;
+	config->postpend_msg = NULL;
 }
 
 int load_config(json_conf_t *config, const char *file)
@@ -284,72 +266,6 @@ static const struct kw_pair *kw_lookup(const char *val)
 	return &keywords[i];
 }
 
-static int server_parser(struct nv_pair *nv, int line, 
-		json_conf_t *config)
-{
-	if (nv->value)
-		config->mozdef_url = strdup(nv->value);
-	else
-		config->mozdef_url = NULL;
-	return 0;
-}
-
-static int ssl_parser(struct nv_pair *nv, int line,
-		json_conf_t *config)
-{
-	config->ssl_verify = 1;
-	if (nv->value) {
-		if (strncasecmp(nv->value, "no", 2) == 0) {
-			config->ssl_verify = 0;
-		}
-	}
-
-	return 0;
-}
-
-static int curl_ca_parser(struct nv_pair *nv, int line,
-		json_conf_t *config)
-{
-	if (nv->value)
-		config->curl_cainfo = strdup(nv->value);
-	else
-		config->curl_cainfo = NULL;
-	return 0;
-}
-
-static int curl_parser(struct nv_pair *nv, int line,
-		json_conf_t *config)
-{
-	config->curl_verbose = 2;
-	if (nv->value) {
-		if (strncasecmp(nv->value, "no", 2) == 0) {
-			config->curl_verbose = 0;
-		}
-	}
-
-	return 0;
-}
-
-static int curl_fparser(struct nv_pair *nv, int line,
-		json_conf_t *config)
-{
-	if (nv->value)
-		config->curl_logfile = strdup(nv->value);
-	else
-		config->curl_logfile = NULL;
-	return 0;
-}
-
-static int file_fparser(struct nv_pair *nv, int line,
-		json_conf_t *config)
-{
-	if (nv->value)
-		config->file_log = strdup(nv->value);
-	else
-		config->file_log = NULL;
-	return 0;
-}
-
 static int prepend_parser(struct nv_pair *nv, int line, 
 		json_conf_t *config)
 {
@@ -372,8 +288,7 @@ static int postpend_parser(struct nv_pair *nv, int line,
 
 void free_config(json_conf_t *config)
 {
-	free((void *)config->mozdef_url);
-        free((void *)config->curl_cainfo);
-        free((void *)config->file_log);
+	free((void *)config->prepend_msg);
+        free((void *)config->postpend_msg);
 }
 
