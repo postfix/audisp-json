@@ -37,20 +37,12 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <time.h>
-#include <curl/curl.h>
 #include "libaudit.h"
 #include "auparse.h"
 #include "json-config.h"
 
 #define CONFIG_FILE "/etc/audisp/audisp-json.conf"
 #define CONFIG_FILE_LOCAL "audisp-json.conf"
-/* after this amount of time for any response (connect, http reply, etc.) just give up
- * and lose messages.
- * don't set this too high as new curl handles will be created and consume memory while 
- * waiting for the connection to work again.
- */
-#define MAX_CURL_GLOBAL_TIMEOUT 5000L
-#define MAX_CURL_QUEUE_SIZE 8192
 #define MAX_JSON_MSG_SIZE 4096
 #define MAX_ARG_LEN 2048
 #define MAX_SUMMARY_LEN 256
@@ -60,7 +52,6 @@
 #define NR_LINES_BUFFERED 64
 #endif
 
-#define HTTP_CODE_OK 200
 
 #ifndef PROGRAM_VERSION
 #define PROGRAM_VERSION "1"
@@ -71,7 +62,6 @@
 /* transform macro int and str value to ... str - needed for defining USER_AGENT ;)*/
 #define _STR(x) #x
 #define STR(x) _STR(x)
-#define USER_AGENT PROGRAM_NAME"/"STR(PROGRAM_VERSION)
 
 extern int h_errno;
 
@@ -82,14 +72,9 @@ static char *hostname = NULL;
 static auparse_state_t *au = NULL;
 static int machine = -1;
 
-static long int curl_timeout = -1;
-FILE *curl_logfile;
-FILE *file_log;
-CURLM *multi_h;
-CURL *easy_h;
-struct curl_slist *slist1;
-int curl_nr_h = -1;
 int msg_lost = 0;
+
+FILE *file_log;
 
 typedef struct { char *val; } msg_t;
 
@@ -119,148 +104,7 @@ typedef struct lq {
 struct lq *msg_queue_list;
 unsigned int msg_queue_list_size = 0;
 
-void prepare_curl_handle(char *new_msg)
-{
-	curl_easy_reset(easy_h);
-	curl_easy_setopt(easy_h, CURLOPT_URL, config.mozdef_url);
-	curl_easy_setopt(easy_h, CURLOPT_NOPROGRESS, 1L);
-	curl_easy_setopt(easy_h, CURLOPT_USERAGENT, USER_AGENT);
-	curl_easy_setopt(easy_h, CURLOPT_HTTPHEADER, slist1);
-	curl_easy_setopt(easy_h, CURLOPT_MAXREDIRS, 10L);
-	curl_easy_setopt(easy_h, CURLOPT_CUSTOMREQUEST, "POST");
-/* keep alive is on by default and only settable in recent libcurl
- * keeping this around in case its not actually default in some cases and needs
- * to be conditionally enabled
- */
-//	curl_easy_setopt(easy_h, CURLOPT_TCP_KEEPALIVE, 1L);
-/* if logfile is set, log there instead of stderr.
- * this is generally useful in combination with the below curl_verbose option,
- * since grabbing stderr from a running plugin may be difficult.
- */
-	if (config.curl_logfile != NULL) {
-		curl_logfile = fopen(config.curl_logfile, "ab");
-		if (curl_logfile == NULL) {
-			syslog(LOG_ERR, "could not open debug curl logfile %s", config.curl_logfile);
-		} else {
-			curl_easy_setopt(easy_h, CURLOPT_STDERR, curl_logfile);
-		}
-	}
-	curl_easy_setopt(easy_h, CURLOPT_VERBOSE, config.curl_verbose);
-	curl_easy_setopt(easy_h, CURLOPT_TIMEOUT_MS, MAX_CURL_GLOBAL_TIMEOUT);
-	curl_easy_setopt(easy_h, CURLOPT_SSL_VERIFYHOST, config.ssl_verify);
-	curl_easy_setopt(easy_h, CURLOPT_SSL_VERIFYPEER, config.ssl_verify);
-	curl_easy_setopt(easy_h, CURLOPT_CAINFO, config.curl_cainfo);
-	curl_easy_setopt(easy_h, CURLOPT_COPYPOSTFIELDS, new_msg);
-}
 
-/* Insert/remove new messages in the queue
- */
-int list_check_queue()
-{
-	queue_t *prev;
-
-	if (!msg_queue_list) {
-		return 1;
-	}
-
-	prev = msg_queue_list;
-	msg_queue_list = msg_queue_list->next;
-
-	curl_multi_remove_handle(multi_h, easy_h);
-	if (prev) {
-		prepare_curl_handle(prev->msg);
-		free(prev);
-		msg_queue_list_size--;
-		curl_multi_add_handle(multi_h, easy_h);
-	}
-	return 0;
-}
-
-/* select and fetch urls */
-void curl_perform(void)
-{
-	/* Do we have curl enabled?
-	 * If not, just bail here
-	 */
-	if (config.file_log != NULL) {
-		return;
-	}
-	int msgs_left;
-	int maxfd = -1;
-	long http_code = 0;
-	struct timeval timeout;
-	int rc;
-	CURLMsg *msg;
-	CURLcode ret;
-	fd_set r, w, e;
-
-	/* Cleanup completed handles */
-	while ((msg = curl_multi_info_read(multi_h, &msgs_left))) {
-		if (msg->msg == CURLMSG_DONE) {
-			ret = curl_easy_getinfo(msg->easy_handle, CURLINFO_RESPONSE_CODE, &http_code);
-			if (ret != CURLM_OK) {
-			   syslog(LOG_ERR, "Couldn't send JSON message (message is lost): %s.", curl_easy_strerror(ret));
-			}
-			if (http_code > HTTP_CODE_OK) {
-				syslog(LOG_ERR, "Couldn't send JSON message (message is lost):  HTTP error code %ld.", http_code);
-			}
-		}
-	}
-
-	/* cURL will set this to 0 when there is no transfer left to process,
-	 * signaling we can sent the next message. list_check_queue() will insert the next message from the queue
-	 * into the multi_h.
-	 * If there's no message in the queue, we bail for now.
-	 */
-	if (curl_nr_h == 0) {
-		curl_nr_h = -1;
-		if (list_check_queue()) {
-			return;
-		}
-	}
-
-	FD_ZERO(&r);
-	FD_ZERO(&w);
-	FD_ZERO(&e);
-
-	/* With cURL you get the timeout you have to wait back from the library, so we use that for the select() call */
-	ret = curl_multi_timeout(multi_h, &curl_timeout);
-	if (ret != CURLM_OK) {
-		syslog(LOG_ERR, "%s", curl_multi_strerror(ret));
-	}
-	timeout.tv_sec = 0;
-	timeout.tv_usec = 100000;
-	if (curl_timeout >= 0) {
-		timeout.tv_sec = curl_timeout / 1000;
-		if (timeout.tv_sec > 1)
-			timeout.tv_sec = 1;
-		else
-			timeout.tv_usec = (curl_timeout % 1000) * 1000;
-	}
-	ret = curl_multi_fdset(multi_h, &r, &w, &e, &maxfd);
-	if (ret != CURLM_OK) {
-		syslog(LOG_ERR, "%s", curl_multi_strerror(ret));
-		return;
-	}
-
-	rc = select(maxfd+1, &r, &w, &e, &timeout);
-
-	switch(rc) {
-		case -1:
-			syslog(LOG_ERR, "%s", strerror(errno));
-			break;
-		case 0:
-		default:
-			/* This also sets curl_nr_h to exactly 0 if all the handles have been processed. */
-			while ((ret = curl_multi_perform(multi_h, &curl_nr_h)) && (ret == CURLM_CALL_MULTI_PERFORM)) {
-				continue;
-			}
-			if (ret != CURLM_OK) {
-				syslog(LOG_ERR, "%s", curl_multi_strerror(ret));
-			}
-			break;
-	}
-}
 
 static void handle_event(auparse_state_t *au,
 		auparse_cb_event_t cb_event_type, void *user_data);
@@ -476,21 +320,6 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	/* libcurl stuff */
-	if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
-		syslog(LOG_ERR, "curl_global_init() failed");
-		return -1;
-	}
-
-	easy_h = curl_easy_init();
-	multi_h = curl_multi_init();
-	slist1 = NULL;
-	slist1 = curl_slist_append(slist1, "Content-Type:application/json");
-	if (!(easy_h && multi_h && slist1)) {
-		syslog(LOG_ERR, "cURL handles creation failed, this is fatal");
-		return -1;
-	}
-
 #ifdef REORDER_HACK
 	int start = 0;
 	int stop = 0;
@@ -546,7 +375,6 @@ int main(int argc, char *argv[])
 #else
 			auparse_feed(au, tmp, len);
 #endif
-			curl_perform();
 		}
 
 		if (feof(stdin))
@@ -554,18 +382,7 @@ int main(int argc, char *argv[])
 	} while (sig_stop == 0);
 
 	auparse_flush_feed(au);
-
-	while (msg_queue_list)
-		curl_perform();
-
 	auparse_destroy(au);
-	curl_easy_cleanup(easy_h);
-	curl_multi_cleanup(multi_h);
-	curl_global_cleanup();
-	if (curl_logfile)
-		fclose(curl_logfile);
-	if (file_log)
-		fclose(file_log);
 	free_config(&config);
 	free(hostname);
 #ifdef REORDER_HACK
@@ -729,12 +546,8 @@ void syslog_json_msg(struct json_msg_type json_msg)
 	attr_t *prev;
 	queue_t *new_q;
 	int len;
-
-	if (msg_queue_list_size > MAX_CURL_QUEUE_SIZE) {
-		syslog(LOG_WARNING, "syslog_json_msg() MAX_CURL_QUEUE_SIZE of %u reached, message lost!", MAX_CURL_QUEUE_SIZE);
-		return;
-	}
-
+	char msg[MAX_JSON_MSG_SIZE];
+	
 	new_q = malloc(sizeof(queue_t));
 	if (!new_q) {
 		syslog(LOG_ERR, "syslog_json_msg() new_q malloc() failed, message lost!");
@@ -771,23 +584,9 @@ void syslog_json_msg(struct json_msg_type json_msg)
 	}
 
 	len += snprintf(new_q->msg+len, MAX_JSON_MSG_SIZE-len, "}%s\n", config.postpend_msg);
-	new_q->msg[MAX_JSON_MSG_SIZE-1] = '\0';
-
-	/* If using curl, fill up the queue, else just print to file */
-	if (config.file_log == NULL) {
-		new_q->next = msg_queue_list;
-		msg_queue_list = new_q;
-		msg_queue_list_size++;
-	} else {
-		if (fputs(new_q->msg, file_log) < 0) {
-			/* Retry once (file closed?) */
-			file_log = fopen(config.file_log, "ab");
-			if (file_log == NULL || fputs(new_q->msg, file_log) < 0) {
-				syslog(LOG_ERR, "could not log to file %s", config.file_log);
-			}
-		}
-		free(new_q);
-	}
+	len += snprintf(msg+len, MAX_JSON_MSG_SIZE-len, "}}");
+	msg[MAX_JSON_MSG_SIZE-1] = '\0';
+	syslog(LOG_INFO, "%s", msg);
 }
 
 /* The main event handling, parsing function */
@@ -1197,5 +996,4 @@ static void handle_event(auparse_state_t *au,
 
 	/* syslog_json_msg() also frees json_msg.details when called. */
 	syslog_json_msg(json_msg);
-	curl_perform();
 }
