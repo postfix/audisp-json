@@ -101,8 +101,8 @@ down for any reason.
 ### Example for rsyslog
 
 ```
-    if $programname == 'audisp-graylog' then {
-    *.* @graylog.example.com:5514;RSYSLOG_SyslogProtocol23Format
+    if $programname == 'audisp-json' then {
+    *.* @log.example.com:5514;RSYSLOG_SyslogProtocol23Format
     stop
     }
 ```
