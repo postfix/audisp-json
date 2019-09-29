@@ -4,7 +4,7 @@ This program is a plugin for Linux Audit user space programs available at <http:
 It uses the audisp multiplexer.
 
 Audisp-json correlates messages coming from the kernel's audit (and through audisp) into a single JSON message that is
-sent directly to a log server (it doesn't use syslog).
+sent directly to syslog.
 The JSON format used is MozDef message format.
 
 Regular audit log messages and audisp-json error, info messages use syslog.
