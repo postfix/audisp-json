@@ -98,7 +98,7 @@ down for any reason.
     filter f_not_auditd { not message("type=[0-9]* audit") or not message("error converting sid to string"); };
     log{ source(s_syslog);f ilter(f_not_auditd); destination(d_logserver); };
 ```
-###Example for rsyslog
+### Example for rsyslog
 
 ```
     if $programname == 'audisp-graylog' then {
