@@ -101,7 +101,7 @@ rpm-deps:
 
 rpm: packaging
 	fpm ${FPMOPTS} -C tmp -v ${VERSION} -n audisp-json --license GPL --vendor mozilla --description "json plugin for Linux Audit" \
-		--url https://github.com/gdestuynder/audisp-json -d audit-libs -d  \
+		--url https://github.com/gdestuynder/audisp-json -d audit-libs -d audit \
 		--config-files etc/audisp/plugins.d/au-json.conf --config-files etc/audisp/audisp-json.conf -s dir -t rpm .
 
 deb-deps:
