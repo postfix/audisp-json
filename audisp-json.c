@@ -843,7 +843,7 @@ static void handle_event(auparse_state_t *au,
 				} else if (!strncmp(sys, "adjtimex", 8)) {
 					havejson = 1;
 					category = CAT_TIME;
-				} else if (!strncmp(sys, "mknod", 5)) {
+				} else if (!strncmp(sys, "mknod", 5) || !strncmp(sys, "mknodat", 7)) {
 					havejson = 1;
 					category = CAT_NODE;
 					json_msg.details = json_add_attr(json_msg.details, "command", auparse_find_field(au, "comm"));
