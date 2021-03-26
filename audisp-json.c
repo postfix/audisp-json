@@ -602,6 +602,7 @@ static void handle_event(auparse_state_t *au,
 		CAT_CHOWN,
 		CAT_PROMISC,
 		CAT_TIME,
+		CAT_NODE,
 		CAT_SOCKET,
 		CAT_LISTEN
 	} category_t;
@@ -700,7 +701,7 @@ static void handle_event(auparse_state_t *au,
 				json_msg.details = json_add_attr(json_msg.details, "session", auparse_find_field(au, "ses"));
 				goto_record_type(au, type);
 				break;
-
+            
 			case AUDIT_AVC:
 				argc = auparse_find_field(au, "apparmor");
 				if (!argc)
@@ -842,6 +843,18 @@ static void handle_event(auparse_state_t *au,
 				} else if (!strncmp(sys, "adjtimex", 8)) {
 					havejson = 1;
 					category = CAT_TIME;
+				} else if (!strncmp(sys, "mknod", 5)) {
+					havejson = 1;
+					category = CAT_NODE;
+					json_msg.details = json_add_attr(json_msg.details, "command", auparse_find_field(au, "comm"));
+					json_msg.details = json_add_attr(json_msg.details, "path", auparse_find_field(au, "name"));
+					json_msg.details = json_add_attr(json_msg.details, "arg0", auparse_find_field(au, "a0"));
+					json_msg.details = json_add_attr(json_msg.details, "arg1", auparse_find_field(au, "a1"));
+					json_msg.details = json_add_attr(json_msg.details, "arg2", auparse_find_field(au, "a2"));
+					json_msg.details = json_add_attr(json_msg.details, "arg3", auparse_find_field(au, "a3"));
+					json_msg.details = json_add_attr(json_msg.details, "success", auparse_find_field(au, "succes"));
+
+
 				} else if (!strncmp(sys, "socket", 6)) {
 					havejson = 1;
 					category = CAT_SOCKET;
@@ -964,8 +977,13 @@ static void handle_event(auparse_state_t *au,
 	} else if (category == CAT_TIME) {
 		json_msg.category = "time";
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "time has been modified");
+	} else if (category == CAT_NODE) {
+		json_msg.category = "specialfiles";
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "special file has been created");
 	} else if (category == CAT_SOCKET) {
 		json_msg.category = "socket";
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Socket");
+	} else if (category == CAT_LISTEN) {
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Socket");
 	} else if (category == CAT_LISTEN) {
 		json_msg.category = "listen";
