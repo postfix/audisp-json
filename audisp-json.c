@@ -605,6 +605,7 @@ static void handle_event(auparse_state_t *au,
 		CAT_MKNOD,
 		CAT_MOD,
 		CAT_SOCKET,
+		CAT_UNIX_SOCKET,
 		CAT_LISTEN
 	} category_t;
 	category_t category;
@@ -781,6 +782,7 @@ static void handle_event(auparse_state_t *au,
 				break;
 
 			case AUDIT_PATH:
+			    goto_record_type(au, type);
 				path = auparse_find_field(au, "name");
 				json_msg.details = json_add_attr(json_msg.details, "path", path);
 				goto_record_type(au, type);
@@ -811,16 +813,14 @@ static void handle_event(auparse_state_t *au,
 					json_del_attrs(json_msg.details);
 					return;
 				}
-
-				json_msg.details = json_add_attr(json_msg.details, "processname", auparse_find_field(au, "comm"));
 				goto_record_type(au, type);
-
+				json_msg.details = json_add_attr(json_msg.details, "processname", auparse_find_field(au, "comm"));
 				if (!strncmp(sys, "write", 5) || !strncmp(sys, "unlink", 6) || !strncmp(sys,
 							"rename", 6)) {
 					havejson = 1;
 					category = CAT_WRITE;
-				} else if (!strncmp(sys, "read", 4) || !strncmp(sys, "open", 4) || !strncmp(sys, "link", 4) ||
-						!strncmp(sys, "mmap", 4) || !strncmp(sys, "mmap2", 5) || !strncmp(sys, "sendfile", 8) ||
+				} else if (!strncmp(sys, "read", 4) || !strncmp(sys, "open", 4) || !strncmp(sys, "openat", 6) || !strncmp(sys, "link", 4) ||
+						!strncmp(sys, "mmap", 4) || !strncmp(sys, "mmap2", 5) || !strncmp(sys, "sendfile", 8) || 
 						!strncmp(sys, "sendfile64", 10)) {
 					havejson = 1;
 					category = CAT_READ;
@@ -848,8 +848,6 @@ static void handle_event(auparse_state_t *au,
 					havejson = 1;
 					category = CAT_MKNOD;
 					goto_record_type(au, type);
-					json_msg.details = json_add_attr(json_msg.details, "command", auparse_find_field(au, "comm"));
-					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "name", auparse_find_field(au, "name"));
 					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "arg0", auparse_find_field(au, "a0"));
@@ -859,15 +857,11 @@ static void handle_event(auparse_state_t *au,
 					json_msg.details = json_add_attr(json_msg.details, "arg2", auparse_find_field(au, "a2"));
 					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "arg3", auparse_find_field(au, "a3"));
-					goto_record_type(au, type);
-					json_msg.details = json_add_attr(json_msg.details, "exe", auparse_find_field(au, "exe"));
 					goto_record_type(au, type);
 				} else if (!strncmp(sys, "init_module", 11) || !strncmp(sys, "finit_module", 12)) {
 					havejson = 1;
 					category = CAT_MOD;
 					goto_record_type(au, type);
-					json_msg.details = json_add_attr(json_msg.details, "command", auparse_find_field(au, "comm"));
-					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "name", auparse_find_field(au, "name"));
 					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "arg0", auparse_find_field(au, "a0"));
@@ -878,14 +872,29 @@ static void handle_event(auparse_state_t *au,
 					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "arg3", auparse_find_field(au, "a3"));
 					goto_record_type(au, type);
-					json_msg.details = json_add_attr(json_msg.details, "exe", auparse_find_field(au, "exe"));
-					goto_record_type(au, type);	
 				} else if (!strncmp(sys, "socket", 6)) {
 					havejson = 1;
 					category = CAT_SOCKET;
+					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "domain", auparse_find_field(au, "a0"));
+					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "type", auparse_find_field(au, "a1"));
+					goto_record_type(au, type);
 					json_msg.details = json_add_attr(json_msg.details, "protocol", auparse_find_field(au, "a2"));
+					goto_record_type(au, type);
+                } else if (!strncmp(sys, "sendmsg", 7) || !strncmp(sys, "sendto", 6)) {
+					havejson = 1;
+					category = CAT_UNIX_SOCKET;
+					goto_record_type(au, type);
+					json_msg.details = json_add_attr(json_msg.details, "arg0", auparse_find_field(au, "a0"));
+					goto_record_type(au, type);
+					json_msg.details = json_add_attr(json_msg.details, "arg1", auparse_find_field(au, "a1"));
+					goto_record_type(au, type);
+					json_msg.details = json_add_attr(json_msg.details, "arg2", auparse_find_field(au, "a2"));
+					goto_record_type(au, type);
+					json_msg.details = json_add_attr(json_msg.details, "arg3", auparse_find_field(au, "a3"));
+					goto_record_type(au, type);
+
 				} else if (!strncmp(sys, "listen", 6)) {
 					havejson = 1;
 					category = CAT_LISTEN;
@@ -915,7 +924,11 @@ static void handle_event(auparse_state_t *au,
 					json_msg.details = json_add_attr(json_msg.details, "uid", auparse_get_field_str(au));
 				}
 				goto_record_type(au, type);
-
+				path = auparse_find_field(au, "name");
+				json_msg.details = json_add_attr(json_msg.details, "name", path);
+				goto_record_type(au, type);
+                json_msg.details = json_add_attr(json_msg.details, "exe", auparse_find_field(au, "exe"));
+				goto_record_type(au, type);
 				json_msg.details = json_add_attr(json_msg.details, "tty", auparse_find_field(au, "tty"));
 				goto_record_type(au, type);
 				json_msg.details = json_add_attr(json_msg.details, "process", auparse_find_field(au, "exe"));
@@ -987,6 +1000,9 @@ static void handle_event(auparse_state_t *au,
 	} else if (category == CAT_WRITE) {
 		json_msg.category = "write";
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Write: %s", unescape(path));
+	} else if (category == CAT_READ) {
+		json_msg.category = "read";
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Read: %s", unescape(path));	
 	} else if (category == CAT_ATTR) {
 		json_msg.category = "attribute";
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Attribute: %s", unescape(path));
@@ -999,18 +1015,24 @@ static void handle_event(auparse_state_t *au,
 	} else if (category == CAT_PTRACE) {
 		json_msg.category = "ptrace";
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Ptrace");
+	} else if (category == CAT_APPARMOR) {
+		json_msg.category = "apparmor";
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Apparmor");	
 	} else if (category == CAT_TIME) {
 		json_msg.category = "time";
-		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "time has been modified");
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Time has been modified");
 	} else if (category == CAT_MKNOD) {
 		json_msg.category = "specialfiles";
-		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "special file creation");
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Special file creation");
 	} else if (category == CAT_MOD) {
 		json_msg.category = "modules";
-		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "kernel module init");
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Kernel module init");
 	} else if (category == CAT_SOCKET) {
 		json_msg.category = "socket";
-		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Socket");
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Send to Unix Socket");
+	} else if (category == CAT_UNIX_SOCKET) {
+		json_msg.category = "unixsocket";
+		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Socket");	
 	} else if (category == CAT_LISTEN) {
 		json_msg.category = "listen";
 		snprintf(json_msg.summary, MAX_SUMMARY_LEN, "Listen");
