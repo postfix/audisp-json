@@ -813,8 +813,6 @@ static void handle_event(auparse_state_t *au,
 					json_del_attrs(json_msg.details);
 					return;
 				}
-				goto_record_type(au, type);
-				json_msg.details = json_add_attr(json_msg.details, "processname", auparse_find_field(au, "comm"));
 				if (!strncmp(sys, "write", 5) || !strncmp(sys, "unlink", 6) || !strncmp(sys,
 							"rename", 6)) {
 					havejson = 1;
